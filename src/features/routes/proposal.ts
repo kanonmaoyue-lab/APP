@@ -43,7 +43,9 @@ export async function adopt(r: Repository, p: Proposal, profile: Profile) {
     );
   }
   if (!changes.length) throw Error('当前时间已经符合建议，无需改动。');
-  return undoable(r, changes, p.cursor);
+  // Multiple occurrences may share the same unchanged parent CAS guard.
+  const unique = [...new Map(changes.map((c) => [c.table + ':' + c.id, c])).values()];
+  return undoable(r, unique, p.cursor);
 }
 export function navigationUrl(place: { lat: number; lon: number }, mode: 'walking' | 'cycling') {
   const url = new URL('https://www.google.com/maps/dir/');

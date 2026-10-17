@@ -46,7 +46,13 @@ export default function EventEditor({
     setBusy(true);
     setError('');
     try {
-      const startAt = time ? resolveLocal(date, time, profile.timeZone) : null;
+      const unchangedClock = event.startAt && date === dateAt(event.startAt, profile.timeZone) &&
+        time === timeAt(event.startAt, profile.timeZone);
+      const startAt = unchangedClock
+        ? event.startAt
+        : time
+        ? resolveLocal(date, time, profile.timeZone)
+        : null;
       if (locked && !startAt) throw Error('固定预约需要设置开始时间');
       if (endsOn && endsOn < date) throw Error('重复结束日期不能早于开始日期');
       const value = {

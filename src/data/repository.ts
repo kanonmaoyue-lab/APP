@@ -192,7 +192,11 @@ export function openRepository(userId: string): Repository {
         const conflicts = await r.conflicts(),
           conflict = conflicts.find((c) => c.operation.id === id);
         if (!conflict) return;
-        if (choice === 'local' && conflict.reason === 'scheduleChanged') {
+        if (
+          choice === 'local' && (conflict.reason === 'scheduleChanged' ||
+            conflict.operation.command.kind === 'write' &&
+              conflict.operation.command.expectedCursor !== undefined)
+        ) {
           throw Error('日程已变化，请重新生成动线建议');
         }
         const blocked = new Set(conflict.keys), affected: Operation[] = [];
@@ -205,6 +209,12 @@ export function openRepository(userId: string): Repository {
         const values = new Map<string, Change>();
         if (choice !== 'remote') {
           for (const op of affected) {
+            if (
+              choice === 'local' && op.command.kind === 'write' &&
+              op.command.expectedCursor !== undefined
+            ) {
+              throw Error('日程已变化，请重新生成动线建议');
+            }
             if (op.command.kind === 'review') throw Error('复习评分冲突请采用云端记录');
             for (const c of op.command.changes) {
               const local = await r.get(c.table, c.id), remote = await db.base.get([c.table, c.id]);
@@ -213,7 +223,7 @@ export function openRepository(userId: string): Repository {
                 values.set(c.table + ':' + c.id, {
                   ...c,
                   baseVersion: remote?.version ?? 0,
-                  value: local ?? null,
+                  value: local?.deletedAt ? null : local ?? null,
                 });
               } else {
                 if (!local || !['events', 'reviewItems'].includes(local.table)) {

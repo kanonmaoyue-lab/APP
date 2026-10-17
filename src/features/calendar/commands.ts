@@ -55,15 +55,26 @@ export interface SaveOptions {
   rule: 'none' | 'daily' | 'weekdays' | 'weekly';
   endsOn: string | null;
 }
+async function occurrencePrerequisites(r: Repository, event: Event) {
+  const series = await r.get('recurrences', event.recurrenceId!);
+  const prior = await r.get('overrides', event.id);
+  if (!series || series.deletedAt) throw Error('重复系列已删除，已完成历史仍保留。');
+  if (
+    !event.sourceVersions || series.version !== event.sourceVersions.series ||
+    (prior?.version ?? 0) !== event.sourceVersions.override
+  ) {
+    throw Error('事项已改变，请关闭并重新打开后操作');
+  }
+  return { series, prior };
+}
 export async function eventChanges(
   r: Repository,
   event: Event,
   options: SaveOptions,
 ): Promise<Change[]> {
+  const { sourceVersions, ...persisted } = event;
   if (event.recurrenceId && event.occurrenceDate) {
-    const series = await r.get('recurrences', event.recurrenceId);
-    if (!series || series.deletedAt) throw Error('重复系列已删除，已完成历史仍保留。');
-    const prior = await r.get('overrides', event.id);
+    const { series, prior } = await occurrencePrerequisites(r, event);
     const exception = change({
       ...meta(r.userId),
       ...prior,
@@ -72,14 +83,15 @@ export async function eventChanges(
       recurrenceId: series.id,
       occurrenceDate: event.occurrenceDate,
       cancelled: false,
-      patch: event,
+      patch: persisted,
     });
-    if (options.scope === 'only') return [exception];
+    // A no-op parent write makes the prerequisite a server-side CAS guard too.
+    if (options.scope === 'only') return [change(series), exception];
     if (!event.startAt) throw Error('整个系列需要设置开始时间');
     const changes = [
       change({
         ...series,
-        template: { ...event, completedAt: null, recurrenceId: null, occurrenceDate: null },
+        template: { ...persisted, completedAt: null, recurrenceId: null, occurrenceDate: null },
         startTime: timeAt(event.startAt, series.timeZone),
         endsOn: options.endsOn,
       }),
@@ -94,7 +106,7 @@ export async function eventChanges(
     const series: Recurrence = {
       ...meta(r.userId),
       table: 'recurrences',
-      template: { ...event, completedAt: null },
+      template: { ...persisted, completedAt: null },
       rule: options.rule,
       startsOn: event.plannedDate,
       endsOn: options.endsOn,
@@ -112,7 +124,7 @@ export async function eventChanges(
         occurrenceDate: event.plannedDate,
         cancelled: false,
         patch: {
-          ...event,
+          ...persisted,
           id: occurrenceId(series.id, event.plannedDate),
           recurrenceId: series.id,
           occurrenceDate: event.plannedDate,
@@ -124,12 +136,12 @@ export async function eventChanges(
     }
     return changes;
   }
-  return [change(event)];
+  return [change(persisted)];
 }
 export async function deleteEvent(r: Repository, event: Event, scope: 'only' | 'series') {
   if (event.recurrenceId && event.occurrenceDate) {
+    const { series: s, prior } = await occurrencePrerequisites(r, event);
     if (scope === 'series') {
-      const s = await r.get('recurrences', event.recurrenceId);
       if (s && !s.deletedAt) {
         await r.enqueue(
           write(r.userId, [{
@@ -141,9 +153,9 @@ export async function deleteEvent(r: Repository, event: Event, scope: 'only' | '
         );
       }
     } else {
-      const prior = await r.get('overrides', event.id);
       await r.enqueue(
         write(r.userId, [
+          change(s),
           change({
             ...meta(r.userId),
             ...prior,

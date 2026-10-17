@@ -109,7 +109,7 @@ begin
    select * into current from public.records where user_id=owner_id and kind=c->>'table' and id=(c->>'id')::uuid;
    if coalesce(current.version,0)<>(c->>'baseVersion')::bigint or current.deleted_at is not null and c->'value'<>'null'::jsonb then
     if current.id is not null then conflicts:=conflicts||jsonb_build_array(current.payload);end if;
-    result:=jsonb_build_object('status','conflict','entities',conflicts,'reason',case when current.deleted_at is not null then 'deleted' else 'version' end);
+    result:=jsonb_build_object('status','conflict','entities',conflicts,'reason',case when result->>'reason'='scheduleChanged' then 'scheduleChanged' when current.deleted_at is not null then 'deleted' else 'version' end);
    end if;
   end loop;
   if result is not null then insert into public.receipts values(owner_id,op_id,result);return result;end if;

@@ -17,11 +17,13 @@ export function expand(
     s.template.durationMinutes,
     ...exceptions.map((o) => o.patch.durationMinutes ?? 0),
   );
+  const dates = new Set(exceptions.map((o) => o.occurrenceDate));
   for (
     let date = addDays(range.start, -Math.ceil(longest / 1440));
     date <= range.end;
     date = addDays(date, 1)
-  ) {
+  ) dates.add(date);
+  for (const date of [...dates].sort()) {
     const o = exceptions.find((o) => o.occurrenceDate === date),
       completed = !!o?.patch.completedAt,
       weekday = Temporal.PlainDate.from(date).dayOfWeek;
@@ -48,6 +50,7 @@ export function expand(
       occurrenceDate: date,
       userId: s.userId,
       version: o?.version ?? s.version,
+      sourceVersions: { series: s.version, override: o?.version ?? 0 },
       deletedAt: null,
     });
   }

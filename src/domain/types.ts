@@ -33,6 +33,8 @@ export interface Category extends Meta {
   color: string;
 }
 export interface Event extends Meta {
+  /** Local expansion snapshot; removed before writing any server payload. */
+  sourceVersions?: { series: number; override: number };
   table: 'events';
   title: string;
   notes: string;

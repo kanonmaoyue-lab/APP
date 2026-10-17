@@ -48,6 +48,8 @@ npm run dev -- --mode test
 
 ## 验证
 
+本次结果与接续状态见 [HANDOFF](docs/HANDOFF.md)，启动步骤见 [CLOUD_START](docs/CLOUD_START.md)。
+
 ```sh
 npm run typecheck
 npm test -- --run

@@ -96,3 +96,91 @@ test('pulling pages never skips unseen commits after a jumping acknowledgement',
   await r.clear();
   r.close();
 });
+test('a committed operation with a lost acknowledgement is recovered by pull without duplication', async () => {
+  const r = openRepository(crypto.randomUUID()),
+    e = { ...newEvent(r.userId, '2026-10-17'), title: '不能重复' },
+    op = write(r.userId, [change(e)]);
+  await r.enqueue(op);
+  let committed = false, calls = 0;
+  const batch = { cursor: '1', operationId: op.id, entities: [{ ...e, version: 1 }] };
+  const transport: Transport = {
+    async pull(cursor) {
+      return {
+        cursor: committed ? '1' : cursor,
+        hasMore: false,
+        batches: committed && cursor === '0' ? [batch] : [],
+      };
+    },
+    async apply() {
+      calls++;
+      committed = true;
+      throw Error('acknowledgement lost');
+    },
+  };
+  const engine = createEngine({ repository: r, transport });
+  await engine.flush();
+  expect(await r.pending()).toHaveLength(1);
+  await engine.flush();
+  expect(await r.pending()).toHaveLength(0);
+  expect(calls).toBe(1);
+  expect((await r.list('events'))[0].version).toBe(1);
+  await r.clear();
+  r.close();
+});
+test('a second engine takes over an expired lease while the first pull is suspended', async () => {
+  const r = openRepository(crypto.randomUUID()),
+    other = openRepository(r.userId),
+    e = { ...newEvent(r.userId, '2026-10-17'), title: '接管' },
+    op = write(r.userId, [change(e)]);
+  await r.enqueue(op);
+  const originalNow = Date.now;
+  let clock = originalNow(), release!: () => void, entered!: () => void, calls = 0;
+  const arrived = new Promise<void>((resolve) => entered = resolve),
+    gate = new Promise<void>((resolve) => release = resolve);
+  Date.now = () => clock;
+  const empty = async (cursor: string) => ({ batches: [], cursor, hasMore: false });
+  const apply: Transport['apply'] = async (command) => {
+    calls++;
+    return {
+      status: 'applied',
+      batch: { cursor: '1', operationId: command.id, entities: [{ ...e, version: 1 }] },
+    };
+  };
+  let first = true;
+  const a = createEngine({
+    repository: r,
+    transport: {
+      apply,
+      async pull(cursor) {
+        if (first) {
+          first = false;
+          entered();
+          await gate;
+        }
+        return empty(cursor);
+      },
+    },
+  });
+  const b = createEngine({ repository: other, transport: { apply, pull: empty } });
+  try {
+    const flight = a.flush();
+    await arrived;
+    await b.flush();
+    expect(calls).toBe(0);
+    clock += 8001;
+    await b.flush();
+    expect(calls).toBe(1);
+    release();
+    await flight;
+    expect(calls).toBe(1);
+    expect(await r.pending()).toHaveLength(0);
+  } finally {
+    release();
+    Date.now = originalNow;
+    a.stop();
+    b.stop();
+    await r.clear();
+    r.close();
+    other.close();
+  }
+});

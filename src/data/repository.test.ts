@@ -95,3 +95,31 @@ test('delete conflict preserves both versions and saving a copy never revives th
   await r.clear();
   r.close();
 });
+test('local conflict resolution preserves final deletion intent after direct or prior edits', async () => {
+  for (const editFirst of [false, true]) {
+    const r = openRepository(crypto.randomUUID()), e = { ...event(r.userId), version: 1 };
+    await r.accept({ cursor: '1', operationId: crypto.randomUUID(), entities: [e] });
+    if (editFirst) await r.enqueue(write(r.userId, [change({ ...e, title: '本地编辑' })]));
+    const op = write(r.userId, [{ table: 'events', id: e.id, baseVersion: 1, value: null }]);
+    await r.enqueue(op);
+    const conflict = (await r.pending())[0];
+    await r.recordConflict(conflict, [{ ...e, title: '云端编辑', version: 2 }], 'version');
+    await r.resolve(conflict.id, 'local');
+    const queued = (await r.pending())[0];
+    if (queued.command.kind !== 'write') throw Error();
+    expect(queued.command.changes[0]).toMatchObject({ baseVersion: 2, value: null });
+    await r.clear();
+    r.close();
+  }
+});
+test('a conflicted route operation cannot drop its snapshot guard even for a version conflict', async () => {
+  const r = openRepository(crypto.randomUUID()),
+    e = event(r.userId),
+    op = write(r.userId, [change(e)], '0');
+  await r.enqueue(op);
+  await r.recordConflict(op, [{ ...e, version: 1 }], 'version');
+  await expect(r.resolve(op.id, 'local')).rejects.toThrow(/重新生成/);
+  expect(await r.pending()).toHaveLength(1);
+  await r.clear();
+  r.close();
+});
