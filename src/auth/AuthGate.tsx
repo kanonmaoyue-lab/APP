@@ -1,3 +1,4 @@
+import { Cat, Paw } from '../app/components';
 import { type ReactNode, useEffect, useState } from 'react';
 import { openRepository, type Repository } from '../data/repository';
 import type { AuthService, Identity } from './service';
@@ -135,7 +136,10 @@ function AuthForm(
   return (
     <div className='auth-page'>
       <section className='panel auth-card'>
-        <p className='auth-cat' aria-hidden='true'>ฅ^•ﻌ•^ฅ</p>
+        <div className='auth-cat' aria-hidden='true'>
+          <Cat />
+          <Paw />
+        </div>
         <p className='eyebrow'>LITTLE DAYS</p>
         <h1>
           {recovery

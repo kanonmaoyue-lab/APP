@@ -106,7 +106,6 @@ export default function RoutePage(
         eyebrow='A LITTLE LESS RUSH'
         title='把路，走得顺一点。'
         description='浙江工业大学（莫干山校区） · 先确认地点，再安排顺序。'
-        flower='⌁'
       />
       <p className='notice'>
         步行与骑行时间来自道路服务。校门开放、天气与校内骑行规定，请以现场情况为准。导航会打开外部地图。

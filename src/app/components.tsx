@@ -1,54 +1,46 @@
 import { type ReactNode, useEffect, useRef } from 'react';
 export type Page = 'today' | 'calendar' | 'reviews' | 'routes' | 'settings';
-export function Cat({ small = false }: { small?: boolean }) {
+export type CatPose = 'planner' | 'sleep';
+export function Cat({ small = false, pose = 'planner' }: { small?: boolean; pose?: CatPose }) {
   return (
-    <svg className={small ? 'cat small' : 'cat'} viewBox='0 0 160 140' aria-hidden='true'>
-      <path
-        d='M34 66 30 21 65 42Q80 36 96 42L129 21 126 66Q143 114 81 121 17 116 34 66Z'
-        fill='#eee6d5'
-        stroke='#7a876f'
-        strokeWidth='3'
-        strokeLinejoin='round'
-      />
-      <path
-        d='m42 46 10 8m57 0 9-8M57 78h1m44 0h1'
-        stroke='#617254'
-        strokeWidth='6'
-        strokeLinecap='round'
-      />
-      <path
-        d='m75 88 6 5 6-5m-6 5v7m-10-2q10 9 20 0'
-        fill='none'
-        stroke='#617254'
-        strokeWidth='2.5'
-      />
-      <ellipse cx='46' cy='89' rx='9' ry='5' fill='#e6bdb4' />
-      <ellipse cx='115' cy='89' rx='9' ry='5' fill='#e6bdb4' />
-      <path
-        d='M133 110q27-22 13-30'
-        fill='none'
-        stroke='#7a876f'
-        strokeWidth='5'
-        strokeLinecap='round'
-      />
+    <img
+      className={small ? 'cat small' : 'cat'}
+      src={'/illustrations/cat-' + pose + '.png'}
+      width={160}
+      height={160}
+      alt=''
+      aria-hidden='true'
+      draggable={false}
+      decoding='async'
+    />
+  );
+}
+export function Paw({ className = '' }: { className?: string }) {
+  return (
+    <svg className={'paw ' + className} viewBox='0 0 32 32' fill='currentColor' aria-hidden='true'>
+      <ellipse cx='7' cy='12' rx='3.5' ry='4.5' transform='rotate(-25 7 12)' />
+      <ellipse cx='13' cy='7' rx='3.2' ry='4.4' transform='rotate(-8 13 7)' />
+      <ellipse cx='21' cy='8' rx='3.2' ry='4.4' transform='rotate(15 21 8)' />
+      <ellipse cx='26' cy='14' rx='3.2' ry='4.2' transform='rotate(30 26 14)' />
+      <path d='M9 22c0-4 3-8 7-8s8 5 8 9c0 5-5 3-8 3s-7 1-7-4Z' />
     </svg>
   );
 }
 export function Empty({ title, text }: { title: string; text: string }) {
   return (
     <div className='empty'>
-      <Cat />
+      <Cat pose='sleep' />
       <h2>{title}</h2>
       <p>{text}</p>
     </div>
   );
 }
 export function Heading(
-  { eyebrow, title, description, flower = '✿' }: {
+  { eyebrow, title, description, cat = 'planner' }: {
     eyebrow: string;
     title: string;
     description: string;
-    flower?: string;
+    cat?: CatPose;
   },
 ) {
   return (
@@ -58,7 +50,10 @@ export function Heading(
         <h1>{title}</h1>
         <p className='muted'>{description}</p>
       </div>
-      <span className='flower' aria-hidden='true'>{flower}</span>
+      <div className='heading-cat' aria-hidden='true'>
+        <Cat pose={cat} />
+        <Paw className='heading-paw' />
+      </div>
     </header>
   );
 }
@@ -67,7 +62,7 @@ const links: [Page, string, string][] = [
   ['calendar', '日历', '▦'],
   ['reviews', '复习花园', '❀'],
   ['routes', '顺路走走', '⌁'],
-  ['settings', '设置', '⚙'],
+  ['settings', '设置', '⚙︎'],
 ];
 export function Shell(
   { page, onPage, status, account, children }: {
@@ -96,12 +91,16 @@ export function Shell(
               aria-current={page === key ? 'page' : undefined}
               onClick={() => onPage(key)}
             >
-              <span aria-hidden='true'>{icon}</span>
+              <span aria-hidden='true'>{key === 'today' ? <Paw /> : icon}</span>
               {label}
-              {page === key && <i />}
+              {page === key && <Paw className='active-paw' />}
             </button>
           ))}
         </nav>
+        <div className='sidebar-companion' aria-hidden='true'>
+          <Cat pose='sleep' />
+          <p>今天也有猫猫陪你呀</p>
+        </div>
         <footer className='sidebar-footer'>
           <div className='sync-status'>{status}</div>
           <small className='account-label'>{account}</small>

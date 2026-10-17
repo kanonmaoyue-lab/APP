@@ -12,6 +12,18 @@ test('production static cache reopens offline, queues edits and syncs after reco
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
     await context.setOffline(true);
     await page.reload();
+    const offlineFonts = await page.evaluate(async () =>
+      (await document.fonts.load('18px "LittleDays Round"', '规划复习小日子')).length
+    );
+    expect(offlineFonts).toBeGreaterThan(0);
+    await expect.poll(() =>
+      page.locator('img.cat').evaluateAll((images) =>
+        images.length > 0 &&
+        images.every((image) =>
+          (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0
+        )
+      )
+    ).toBe(true);
     await page.getByRole('button', { name: '新增事项' }).click();
     await page.getByLabel('事项名称').fill('离线也能记下的小事');
     await page.getByRole('button', { name: '保存事项' }).click();

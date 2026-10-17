@@ -85,7 +85,7 @@ export default function ReviewPage(
         eyebrow='GROW A LITTLE, EVERY DAY'
         title='记忆，也会慢慢开花。'
         description='按1、3、7、14、30天间隔，给知识浇一点水。'
-        flower='❀'
+        cat='sleep'
       />
       <div className='toolbar'>
         <div className='segmented'>

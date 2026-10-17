@@ -1,6 +1,6 @@
 # 启动与接续
 
-工作目录 `/workspace/APP`，开发分支 `work`。先读 `docs/HANDOFF.md`、`docs/RECOVERY.md` 和 `git status --short`／`git log -5 --oneline`。不要把初始 README 或旧会话的测试当成应用已经恢复；不要 reset、覆盖已有配置或删除未提交文件。
+工作目录 `/workspace/APP`，开发分支 `codex/little-days-pink`。先读 `docs/HANDOFF.md`、`docs/RECOVERY.md` 和 `git status --short`／`git log -5 --oneline`。不要把初始 README 或旧会话的测试当成应用已经恢复；不要 reset、覆盖已有配置或删除未提交文件。
 
 1. 依赖或本地后端缺失时运行 `bash scripts/cloud-install.sh`。脚本已经在本次环境完整运行成功。使用 `/workspace/.cache`，不要写入只读 home，不关闭 TLS 校验。
 2. 已安装时运行 `npm run backend:start`，再运行 `node scripts/local.mjs`。配置文件不同会明确拒绝覆盖；先检查原因。不要输出 `.env`、原始 `supabase status -o json`、session 或密钥。

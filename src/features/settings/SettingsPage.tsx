@@ -15,7 +15,7 @@ export default function SettingsPage(
   const data = useRecords(repository),
     [draft, setDraft] = useState(profile),
     [name, setName] = useState(''),
-    [color, setColor] = useState('#a3b18a'),
+    [color, setColor] = useState('#dd92b1'),
     [notice, setNotice] = useState(''),
     [error, setError] = useState(''),
     saved = useRef(content(profile));
