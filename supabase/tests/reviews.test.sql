@@ -1,0 +1,15 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
+select plan(7);
+insert into auth.users(id,email)values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','review@local.test');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',true);
+select is(apply_operation(jsonb_build_object('id',gen_random_uuid(),'userId',auth.uid(),'command',jsonb_build_object('kind','write','changes',jsonb_build_array(jsonb_build_object('table','reviewItems','id','11111111-1111-4111-8111-111111111111','baseVersion',0,'value',jsonb_build_object('table','reviewItems','id','11111111-1111-4111-8111-111111111111','userId',auth.uid(),'version',0,'updatedAt',now(),'deletedAt',null,'title','高数','notes','极限','learnedOn',(current_date-2)::text,'level',4,'nextReviewOn','2099-01-01','durationMinutes',20,'categoryId',null,'archivedAt',null))))))->>'status','applied','create review theme');
+select is((select (payload->>'level')::int from records),0,'server ignores forged initial level');
+select throws_ok($q$select apply_operation(jsonb_build_object('id',gen_random_uuid(),'userId',auth.uid(),'command',jsonb_build_object('kind','review','itemId','11111111-1111-4111-8111-111111111111','rating','remembered','reviewDate',current_date::text)))$q$,'22023',null,'review requires a base version');
+select is(apply_operation(jsonb_build_object('id',gen_random_uuid(),'userId',auth.uid(),'command',jsonb_build_object('kind','review','itemId','11111111-1111-4111-8111-111111111111','baseVersion',1,'rating','remembered','reviewDate',current_date::text)))->>'status','applied','remembered review applied');
+select is((select payload->>'nextReviewOn' from records where kind='reviewItems'),(current_date+3)::text,'next date from actual review day');
+select is(apply_operation(jsonb_build_object('id',gen_random_uuid(),'userId',auth.uid(),'command',jsonb_build_object('kind','review','itemId','11111111-1111-4111-8111-111111111111','baseVersion',2,'rating','remembered','reviewDate',current_date::text)))->>'status','conflict','same-day second review refused');
+select is((select count(*)::int from records where kind='reviewLogs'),1,'one immutable daily log');
+select * from finish();rollback;
