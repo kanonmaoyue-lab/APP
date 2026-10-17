@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.test-dist/
+.production-test-dist/
+.env*
+!.env.example
+.superpowers/
+test-results/
+production-test-results/
+playwright-report/
+supabase/.temp/
+supabase/.branches/
