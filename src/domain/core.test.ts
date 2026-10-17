@@ -1,10 +1,70 @@
-import {expect,test} from 'vitest';
-import {resolveLocal,addDays,shiftMonth,dayEvents,validateEvent} from './dates';
-import {scheduleReview} from './reviews';
-import {expand,occurrenceId} from './recurrence';
-import {newEvent,meta,type Recurrence} from './types';
-const user='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-test('DST uses first valid minute, earlier overlapping instant, rejects a missing date',()=>{expect(resolveLocal('2026-03-08','02:30','America/New_York')).toBe('2026-03-08T07:00:00Z');expect(resolveLocal('2026-11-01','01:30','America/New_York')).toBe('2026-11-01T05:30:00Z');expect(()=>resolveLocal('2011-12-30','08:00','Pacific/Apia')).toThrow();expect(shiftMonth('2026-10-01',1)).toBe('2026-11-01');expect(addDays('2026-12-31',1)).toBe('2027-01-01');});
-test('cross-midnight uses half-open intervals and invalid intervals are rejected',()=>{const event={...newEvent(user,'2026-10-16'),title:'夜读',startAt:'2026-10-16T15:30:00Z',endAt:'2026-10-16T16:30:00Z',durationMinutes:60};expect(dayEvents([event],'2026-10-17','Asia/Shanghai')).toHaveLength(1);expect(dayEvents([{...event,endAt:'2026-10-16T16:00:00Z'}],'2026-10-17','Asia/Shanghai')).toHaveLength(0);expect(()=>validateEvent({...event,durationMinutes:0})).toThrow();});
-test('actual review date controls bounded intervals',()=>{expect(scheduleReview(0,'remembered','2026-10-16')).toEqual({level:1,nextReviewOn:'2026-10-19'});expect(scheduleReview(4,'remembered','2026-10-16')).toEqual({level:4,nextReviewOn:'2026-11-15'});expect(scheduleReview(4,'fuzzy','2026-10-16')).toEqual({level:3,nextReviewOn:'2026-10-30'});expect(scheduleReview(4,'forgot','2026-10-16')).toEqual({level:0,nextReviewOn:'2026-10-17'});});
-test('recurrence identities are stable, cancellations unique and completed history survives series deletion',()=>{const s:Recurrence={...meta(user),table:'recurrences',template:{...newEvent(user,'2026-10-16'),title:'学习'},rule:'daily',startsOn:'2026-10-16',endsOn:null,startTime:'09:00',timeZone:'Asia/Shanghai',daysOfWeek:[5]};const completed={...meta(user),id:occurrenceId(s.id,'2026-10-16'),table:'overrides' as const,recurrenceId:s.id,occurrenceDate:'2026-10-16',cancelled:false,patch:{completedAt:'2026-10-16T02:00:00Z'}};const range={start:'2026-10-16',end:'2026-10-18'};expect(expand(s,[],range).map(e=>e.id)).toEqual(expand(s,[],range).map(e=>e.id));expect(expand({...s,deletedAt:'2026-10-17T00:00:00Z'},[completed],range)).toHaveLength(1);expect(expand(s,[{...completed,cancelled:true}],range)).toHaveLength(2);});
+import { expect, test } from 'vitest';
+import { addDays, dayEvents, resolveLocal, shiftMonth, validateEvent } from './dates';
+import { scheduleReview } from './reviews';
+import { expand, occurrenceId } from './recurrence';
+import { meta, newEvent, type Recurrence } from './types';
+const user = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+test('DST uses first valid minute, earlier overlapping instant, rejects a missing date', () => {
+  expect(resolveLocal('2026-03-08', '02:30', 'America/New_York')).toBe('2026-03-08T07:00:00Z');
+  expect(resolveLocal('2026-11-01', '01:30', 'America/New_York')).toBe('2026-11-01T05:30:00Z');
+  expect(() => resolveLocal('2011-12-30', '08:00', 'Pacific/Apia')).toThrow();
+  expect(shiftMonth('2026-10-01', 1)).toBe('2026-11-01');
+  expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+});
+test('cross-midnight uses half-open intervals and invalid intervals are rejected', () => {
+  const event = {
+    ...newEvent(user, '2026-10-16'),
+    title: '夜读',
+    startAt: '2026-10-16T15:30:00Z',
+    endAt: '2026-10-16T16:30:00Z',
+    durationMinutes: 60,
+  };
+  expect(dayEvents([event], '2026-10-17', 'Asia/Shanghai')).toHaveLength(1);
+  expect(dayEvents([{ ...event, endAt: '2026-10-16T16:00:00Z' }], '2026-10-17', 'Asia/Shanghai'))
+    .toHaveLength(0);
+  expect(() => validateEvent({ ...event, durationMinutes: 0 })).toThrow();
+});
+test('actual review date controls bounded intervals', () => {
+  expect(scheduleReview(0, 'remembered', '2026-10-16')).toEqual({
+    level: 1,
+    nextReviewOn: '2026-10-19',
+  });
+  expect(scheduleReview(4, 'remembered', '2026-10-16')).toEqual({
+    level: 4,
+    nextReviewOn: '2026-11-15',
+  });
+  expect(scheduleReview(4, 'fuzzy', '2026-10-16')).toEqual({
+    level: 3,
+    nextReviewOn: '2026-10-30',
+  });
+  expect(scheduleReview(4, 'forgot', '2026-10-16')).toEqual({
+    level: 0,
+    nextReviewOn: '2026-10-17',
+  });
+});
+test('recurrence identities are stable, cancellations unique and completed history survives series deletion', () => {
+  const s: Recurrence = {
+    ...meta(user),
+    table: 'recurrences',
+    template: { ...newEvent(user, '2026-10-16'), title: '学习' },
+    rule: 'daily',
+    startsOn: '2026-10-16',
+    endsOn: null,
+    startTime: '09:00',
+    timeZone: 'Asia/Shanghai',
+    daysOfWeek: [5],
+  };
+  const completed = {
+    ...meta(user),
+    id: occurrenceId(s.id, '2026-10-16'),
+    table: 'overrides' as const,
+    recurrenceId: s.id,
+    occurrenceDate: '2026-10-16',
+    cancelled: false,
+    patch: { completedAt: '2026-10-16T02:00:00Z' },
+  };
+  const range = { start: '2026-10-16', end: '2026-10-18' };
+  expect(expand(s, [], range).map((e) => e.id)).toEqual(expand(s, [], range).map((e) => e.id));
+  expect(expand({ ...s, deletedAt: '2026-10-17T00:00:00Z' }, [completed], range)).toHaveLength(1);
+  expect(expand(s, [{ ...completed, cancelled: true }], range)).toHaveLength(2);
+});

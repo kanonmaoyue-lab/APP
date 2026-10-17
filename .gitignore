@@ -10,3 +10,6 @@ production-test-results/
 playwright-report/
 supabase/.temp/
 supabase/.branches/
+.production-test-dist/
+production-test-results/
+backups/

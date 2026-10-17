@@ -1,2 +1,26 @@
-import type {Event} from '../../domain/types';
-export function lanes(events:Event[]){const result=new Map<string,{lane:number;count:number}>(),sorted=events.filter(e=>e.startAt&&e.endAt).sort((a,b)=>Date.parse(a.startAt!)-Date.parse(b.startAt!)||Date.parse(b.endAt!)-Date.parse(a.endAt!)||a.id.localeCompare(b.id));let group:{id:string;lane:number}[]=[],ends:number[]=[],until=-Infinity;const commit=()=>{for(const e of group)result.set(e.id,{lane:e.lane,count:ends.length});group=[];ends=[];until=-Infinity;};for(const e of sorted){const start=Date.parse(e.startAt!),end=Date.parse(e.endAt!);if(start>=until)commit();let lane=ends.findIndex(time=>time<=start);if(lane<0)lane=ends.length;ends[lane]=end;until=Math.max(until,end);group.push({id:e.id,lane});}commit();return result;}
+import type { Event } from '../../domain/types';
+export function lanes(events: Event[]) {
+  const result = new Map<string, { lane: number; count: number }>(),
+    sorted = events.filter((e) => e.startAt && e.endAt).sort((a, b) =>
+      Date.parse(a.startAt!) - Date.parse(b.startAt!) ||
+      Date.parse(b.endAt!) - Date.parse(a.endAt!) || a.id.localeCompare(b.id)
+    );
+  let group: { id: string; lane: number }[] = [], ends: number[] = [], until = -Infinity;
+  const commit = () => {
+    for (const e of group) result.set(e.id, { lane: e.lane, count: ends.length });
+    group = [];
+    ends = [];
+    until = -Infinity;
+  };
+  for (const e of sorted) {
+    const start = Date.parse(e.startAt!), end = Date.parse(e.endAt!);
+    if (start >= until) commit();
+    let lane = ends.findIndex((time) => time <= start);
+    if (lane < 0) lane = ends.length;
+    ends[lane] = end;
+    until = Math.max(until, end);
+    group.push({ id: e.id, lane });
+  }
+  commit();
+  return result;
+}

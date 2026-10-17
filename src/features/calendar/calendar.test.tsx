@@ -1,11 +1,84 @@
-import {test,expect} from 'vitest';
-import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import { expect, test } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CalendarPage from './CalendarPage';
-import {openRepository} from '../../data/repository';
-import {newProfile,meta,newEvent,write,change,type Recurrence} from '../../domain/types';
-import {expand,occurrenceId} from '../../domain/recurrence';
-import {lanes} from './layout';
-const date='2026-10-17';
-test('natural-month navigation and precise completed event editing',async()=>{const r=openRepository(crypto.randomUUID()),dates:string[]=[];const {unmount}=render(<CalendarPage repository={r} profile={newProfile(r.userId)} date="2026-10-01" onDate={d=>dates.push(d)} initialView="month"/>);fireEvent.click(screen.getByRole('button',{name:'下一个日期'}));expect(dates).toEqual(['2026-11-01']);fireEvent.click(screen.getByRole('button',{name:'新增事项'}));fireEvent.change(screen.getByLabelText('事项名称'),{target:{value:'图书馆'}});fireEvent.change(screen.getByLabelText('开始时间'),{target:{value:'09:07'}});fireEvent.click(screen.getByLabelText('已完成'));fireEvent.click(screen.getByRole('button',{name:'保存事项'}));await waitFor(async()=>expect((await r.list('events'))[0]?.startAt).toBe('2026-10-01T01:07:00Z'));expect((await r.list('events'))[0].completedAt).toBeTruthy();unmount();await r.clear();r.close();});
-test('a completed occurrence remains visible after deleting its recurrence series',async()=>{const r=openRepository(crypto.randomUUID()),s:Recurrence={...meta(r.userId),table:'recurrences',template:{...newEvent(r.userId,date),title:'历史学习'},rule:'daily',startsOn:date,endsOn:null,startTime:'09:00',timeZone:'Asia/Shanghai',daysOfWeek:[6]},o={...meta(r.userId),id:occurrenceId(s.id,date),table:'overrides'as const,recurrenceId:s.id,occurrenceDate:date,cancelled:false,patch:{completedAt:'2026-10-17T02:00:00Z'}};await r.enqueue(write(r.userId,[change(s),change(o)]));await r.enqueue(write(r.userId,[{table:'recurrences',id:s.id,baseVersion:0,value:null}]));const {unmount}=render(<CalendarPage repository={r} profile={newProfile(r.userId)} date={date} onDate={()=>{}}/>);expect(await screen.findByRole('button',{name:/✓ 历史学习/})).toBeVisible();expect(expand((await r.list('recurrences',true))[0],[o],{start:date,end:'2026-10-18'})).toHaveLength(1);unmount();await r.clear();r.close();});
-test('chained overlapping events share stable columns without collisions',()=>{const a={...newEvent('u',date),id:'a',startAt:'2026-10-17T01:00:00Z',endAt:'2026-10-17T03:00:00Z'},b={...a,id:'b',endAt:'2026-10-17T02:00:00Z'},c={...a,id:'c',startAt:'2026-10-17T02:00:00Z',endAt:'2026-10-17T04:00:00Z'};const l=lanes([c,b,a]);expect(l.get('a')?.count).toBe(2);expect(l.get('b')?.lane).toBe(l.get('c')?.lane);expect(l.get('a')?.lane).not.toBe(l.get('b')?.lane);});
+import { openRepository } from '../../data/repository';
+import { change, meta, newEvent, newProfile, type Recurrence, write } from '../../domain/types';
+import { expand, occurrenceId } from '../../domain/recurrence';
+import { lanes } from './layout';
+const date = '2026-10-17';
+test('natural-month navigation and precise completed event editing', async () => {
+  const r = openRepository(crypto.randomUUID()), dates: string[] = [];
+  const { unmount } = render(
+    <CalendarPage
+      repository={r}
+      profile={newProfile(r.userId)}
+      date='2026-10-01'
+      onDate={(d) => dates.push(d)}
+      initialView='month'
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '下一个日期' }));
+  expect(dates).toEqual(['2026-11-01']);
+  fireEvent.click(screen.getByRole('button', { name: '新增事项' }));
+  fireEvent.change(screen.getByLabelText('事项名称'), { target: { value: '图书馆' } });
+  fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '09:07' } });
+  fireEvent.click(screen.getByLabelText('已完成'));
+  fireEvent.click(screen.getByRole('button', { name: '保存事项' }));
+  await waitFor(async () =>
+    expect((await r.list('events'))[0]?.startAt).toBe('2026-10-01T01:07:00Z')
+  );
+  expect((await r.list('events'))[0].completedAt).toBeTruthy();
+  unmount();
+  await r.clear();
+  r.close();
+});
+test('a completed occurrence remains visible after deleting its recurrence series', async () => {
+  const r = openRepository(crypto.randomUUID()),
+    s: Recurrence = {
+      ...meta(r.userId),
+      table: 'recurrences',
+      template: { ...newEvent(r.userId, date), title: '历史学习' },
+      rule: 'daily',
+      startsOn: date,
+      endsOn: null,
+      startTime: '09:00',
+      timeZone: 'Asia/Shanghai',
+      daysOfWeek: [6],
+    },
+    o = {
+      ...meta(r.userId),
+      id: occurrenceId(s.id, date),
+      table: 'overrides' as const,
+      recurrenceId: s.id,
+      occurrenceDate: date,
+      cancelled: false,
+      patch: { completedAt: '2026-10-17T02:00:00Z' },
+    };
+  await r.enqueue(write(r.userId, [change(s), change(o)]));
+  await r.enqueue(
+    write(r.userId, [{ table: 'recurrences', id: s.id, baseVersion: 0, value: null }]),
+  );
+  const { unmount } = render(
+    <CalendarPage repository={r} profile={newProfile(r.userId)} date={date} onDate={() => {}} />,
+  );
+  expect(await screen.findByRole('button', { name: /✓ 历史学习/ })).toBeVisible();
+  expect(expand((await r.list('recurrences', true))[0], [o], { start: date, end: '2026-10-18' }))
+    .toHaveLength(1);
+  unmount();
+  await r.clear();
+  r.close();
+});
+test('chained overlapping events share stable columns without collisions', () => {
+  const a = {
+      ...newEvent('u', date),
+      id: 'a',
+      startAt: '2026-10-17T01:00:00Z',
+      endAt: '2026-10-17T03:00:00Z',
+    },
+    b = { ...a, id: 'b', endAt: '2026-10-17T02:00:00Z' },
+    c = { ...a, id: 'c', startAt: '2026-10-17T02:00:00Z', endAt: '2026-10-17T04:00:00Z' };
+  const l = lanes([c, b, a]);
+  expect(l.get('a')?.count).toBe(2);
+  expect(l.get('b')?.lane).toBe(l.get('c')?.lane);
+  expect(l.get('a')?.lane).not.toBe(l.get('b')?.lane);
+});

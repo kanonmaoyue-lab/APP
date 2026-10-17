@@ -1,6 +1,52 @@
-import {expect,test} from 'vitest';
-import {optimize,type RouteInput} from './optimizer';
-import {newEvent} from './types';
-function input():RouteInput{const place={label:'起点',lat:30,lon:120};return {origin:place,startAt:'2026-10-17T00:00:00Z',endAt:'2026-10-17T04:00:00Z',events:['B','C'].map(name=>({...newEvent('u','2026-10-17'),title:name,location:{...place,label:name}})),busy:[],matrices:{walking:[[0,600,300],[600,0,600],[300,420,0]]}};}
-test('chooses twelve minutes rather than twenty and uses destination mode',()=>{const i=input(),r=optimize(i);expect(r.feasible).toBe(true);if(r.feasible){expect(r.stops.map(s=>s.event.title)).toEqual(['C','B']);expect(r.travelSeconds).toBe(720);}i.events[0].travelMode='cycling';i.matrices.cycling=[[0,60,999],[999,0,999],[999,60,0]];const m=optimize(i);if(!m.feasible)throw Error('expected route');expect(m.stops.find(s=>s.event.title==='B')?.travelSeconds).toBe(60);});
-test('preserves locked appointments and refuses busy, unreachable and late plans',()=>{const i=input();i.events[0]={...i.events[0],locked:true,startAt:'2026-10-17T01:00:00Z',endAt:'2026-10-17T01:30:00Z'};const r=optimize(i);if(!r.feasible)throw Error('expected route');expect(r.stops.find(s=>s.event.id===i.events[0].id)?.startAt).toBe(i.events[0].startAt);const blocked=input();blocked.busy=[{startAt:blocked.startAt,endAt:blocked.endAt}];expect(optimize(blocked).feasible).toBe(false);const disconnected=input();disconnected.matrices.walking=[[0,null,null],[null,0,null],[null,null,0]];expect(optimize(disconnected).feasible).toBe(false);const late=input();late.endAt='2026-10-17T00:20:00Z';expect(optimize(late).feasible).toBe(false);});
+import { expect, test } from 'vitest';
+import { optimize, type RouteInput } from './optimizer';
+import { newEvent } from './types';
+function input(): RouteInput {
+  const place = { label: '起点', lat: 30, lon: 120 };
+  return {
+    origin: place,
+    startAt: '2026-10-17T00:00:00Z',
+    endAt: '2026-10-17T04:00:00Z',
+    events: ['B', 'C'].map((name) => ({
+      ...newEvent('u', '2026-10-17'),
+      title: name,
+      location: { ...place, label: name },
+    })),
+    busy: [],
+    matrices: { walking: [[0, 600, 300], [600, 0, 600], [300, 420, 0]] },
+  };
+}
+test('chooses twelve minutes rather than twenty and uses destination mode', () => {
+  const i = input(), r = optimize(i);
+  expect(r.feasible).toBe(true);
+  if (r.feasible) {
+    expect(r.stops.map((s) => s.event.title)).toEqual(['C', 'B']);
+    expect(r.travelSeconds).toBe(720);
+  }
+  i.events[0].travelMode = 'cycling';
+  i.matrices.cycling = [[0, 60, 999], [999, 0, 999], [999, 60, 0]];
+  const m = optimize(i);
+  if (!m.feasible) throw Error('expected route');
+  expect(m.stops.find((s) => s.event.title === 'B')?.travelSeconds).toBe(60);
+});
+test('preserves locked appointments and refuses busy, unreachable and late plans', () => {
+  const i = input();
+  i.events[0] = {
+    ...i.events[0],
+    locked: true,
+    startAt: '2026-10-17T01:00:00Z',
+    endAt: '2026-10-17T01:30:00Z',
+  };
+  const r = optimize(i);
+  if (!r.feasible) throw Error('expected route');
+  expect(r.stops.find((s) => s.event.id === i.events[0].id)?.startAt).toBe(i.events[0].startAt);
+  const blocked = input();
+  blocked.busy = [{ startAt: blocked.startAt, endAt: blocked.endAt }];
+  expect(optimize(blocked).feasible).toBe(false);
+  const disconnected = input();
+  disconnected.matrices.walking = [[0, null, null], [null, 0, null], [null, null, 0]];
+  expect(optimize(disconnected).feasible).toBe(false);
+  const late = input();
+  late.endAt = '2026-10-17T00:20:00Z';
+  expect(optimize(late).feasible).toBe(false);
+});

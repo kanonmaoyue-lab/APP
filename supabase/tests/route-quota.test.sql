@@ -1,0 +1,10 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
+select plan(3);
+insert into auth.users(id,email)values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','quota@local.test');
+select is((select count(*)::int from generate_series(1,21) n where consume_route_quota('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')),20,'only twenty calls in server minute');
+set local role authenticated;
+select throws_ok($q$select consume_route_quota('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')$q$,'42501',null,'account cannot bypass quota RPC');
+select throws_ok($q$delete from route_quota$q$,'42501',null,'account cannot reset quota');
+select * from finish();rollback;

@@ -1,11 +1,113 @@
-import {useEffect,useRef} from 'react';
-import {useDraggable,useDroppable} from '@dnd-kit/core';
-import type {Event,Category,Profile} from '../../domain/types';
-import {timeAt,dateAt} from '../../domain/dates';
-import {lanes} from './layout';
-export function EventCard({event,zone,onEdit,category,style}:{event:Event;zone:string;onEdit:(e:Event)=>void;category?:Category;style?:React.CSSProperties}){const {attributes,listeners,setNodeRef,transform,isDragging}=useDraggable({id:event.id,data:{event}});return <div ref={setNodeRef} className="event-wrap" style={{...style,transform:transform?`translate3d(${transform.x}px,${transform.y}px,0)`:undefined,zIndex:isDragging?15:undefined,opacity:isDragging?.75:1}}><button className={'event-card'+(event.completedAt?' complete':'')} onClick={()=>onEdit(event)} style={category?{borderLeftColor:category.color}:undefined}><h3>{event.completedAt?'✓ ':''}{event.locked?'⌑ ':''}{event.title}</h3><small>{event.startAt?`${timeAt(event.startAt,zone)} · ${event.durationMinutes} 分钟`:`${event.durationMinutes} 分钟 · 待安排`}{category?' · '+category.name:''}</small></button><button className="drag-handle" aria-label={'拖动'+event.title} {...attributes} {...listeners}>⠿</button></div>;}
-const minutes=(time:string)=>Number(time.slice(0,2))*60+Number(time.slice(3,5));
-export default function Timeline({date,profile,events,categories,onEdit}:{date:string;profile:Profile;events:Event[];categories:Category[];onEdit:(e:Event)=>void}){const {setNodeRef}=useDroppable({id:'timeline:'+date,data:{date}}),scroll=useRef<HTMLDivElement>(null),layout=lanes(events),zone=profile.timeZone;
- useEffect(()=>{if(scroll.current)scroll.current.scrollTop=minutes(profile.dayStart);},[date,profile.dayStart]);
- return <div className="timeline-scroll" ref={scroll} aria-label="每日时间轴"><div className="timeline-canvas" ref={setNodeRef} data-date={date}><div className="outside-hours" style={{top:0,height:minutes(profile.dayStart)}}/><div className="outside-hours" style={{top:minutes(profile.dayEnd),bottom:0}}/>{Array.from({length:24},(_,hour)=><div key={hour} className="hour-line" style={{top:hour*60}}><span>{String(hour).padStart(2,'0')}:00</span></div>)}<span className="hours-caption" style={{top:minutes(profile.dayStart)}}>常用时段 {profile.dayStart} — {profile.dayEnd}</span>{events.filter(e=>e.startAt&&e.endAt).map(event=>{const start=dateAt(event.startAt!,zone)<date?0:minutes(timeAt(event.startAt!,zone)),end=dateAt(event.endAt!,zone)>date?1440:minutes(timeAt(event.endAt!,zone)),{lane,count}=layout.get(event.id)!;return <EventCard key={event.id} event={event} zone={zone} onEdit={onEdit} category={categories.find(c=>c.id===event.categoryId)} style={{position:'absolute',top:start+2,left:`calc(60px + (100% - 72px) * ${lane/count})`,width:`calc((100% - 72px) / ${count} - 5px)`,height:Math.max(44,end-start-4)}}/>;})}</div></div>;
+import { useEffect, useRef } from 'react';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
+import type { Category, Event, Profile } from '../../domain/types';
+import { dateAt, timeAt } from '../../domain/dates';
+import { lanes } from './layout';
+export function EventCard(
+  { event, zone, onEdit, category, style }: {
+    event: Event;
+    zone: string;
+    onEdit: (e: Event) => void;
+    category?: Category;
+    style?: React.CSSProperties;
+  },
+) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: event.id,
+    data: { event },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className='event-wrap'
+      style={{
+        ...style,
+        transform: transform ? `translate3d(${transform.x}px,${transform.y}px,0)` : undefined,
+        zIndex: isDragging ? 15 : undefined,
+        opacity: isDragging ? .75 : 1,
+      }}
+    >
+      <button
+        className={'event-card' + (event.completedAt ? ' complete' : '')}
+        onClick={() => onEdit(event)}
+        style={category ? { borderLeftColor: category.color } : undefined}
+      >
+        <h3>{event.completedAt ? '✓ ' : ''}{event.locked ? '⌑ ' : ''}{event.title}</h3>
+        <small>
+          {event.startAt
+            ? `${timeAt(event.startAt, zone)} · ${event.durationMinutes} 分钟`
+            : `${event.durationMinutes} 分钟 · 待安排`}
+          {category ? ' · ' + category.name : ''}
+        </small>
+      </button>
+      <button
+        className='drag-handle'
+        aria-label={'拖动' + event.title}
+        {...attributes}
+        {...listeners}
+      >
+        ⠿
+      </button>
+    </div>
+  );
+}
+const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+export default function Timeline(
+  { date, profile, events, categories, onEdit }: {
+    date: string;
+    profile: Profile;
+    events: Event[];
+    categories: Category[];
+    onEdit: (e: Event) => void;
+  },
+) {
+  const { setNodeRef } = useDroppable({ id: 'timeline:' + date, data: { date } }),
+    scroll = useRef<HTMLDivElement>(null),
+    layout = lanes(events),
+    zone = profile.timeZone;
+  useEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = minutes(profile.dayStart);
+  }, [date, profile.dayStart]);
+  return (
+    <div className='timeline-scroll' ref={scroll} aria-label='每日时间轴'>
+      <div className='timeline-canvas' ref={setNodeRef} data-date={date}>
+        <div className='outside-hours' style={{ top: 0, height: minutes(profile.dayStart) }} />
+        <div className='outside-hours' style={{ top: minutes(profile.dayEnd), bottom: 0 }} />
+        {Array.from(
+          { length: 24 },
+          (_, hour) => (
+            <div key={hour} className='hour-line' style={{ top: hour * 60 }}>
+              <span>{String(hour).padStart(2, '0')}:00</span>
+            </div>
+          ),
+        )}
+        <span className='hours-caption' style={{ top: minutes(profile.dayStart) }}>
+          常用时段 {profile.dayStart} — {profile.dayEnd}
+        </span>
+        {events.filter((e) => e.startAt && e.endAt).map((event) => {
+          const start = dateAt(event.startAt!, zone) < date
+              ? 0
+              : minutes(timeAt(event.startAt!, zone)),
+            end = dateAt(event.endAt!, zone) > date ? 1440 : minutes(timeAt(event.endAt!, zone)),
+            { lane, count } = layout.get(event.id)!;
+          return (
+            <EventCard
+              key={event.id}
+              event={event}
+              zone={zone}
+              onEdit={onEdit}
+              category={categories.find((c) => c.id === event.categoryId)}
+              style={{
+                position: 'absolute',
+                top: start + 2,
+                left: `calc(60px + (100% - 72px) * ${lane / count})`,
+                width: `calc((100% - 72px) / ${count} - 5px)`,
+                height: Math.max(44, end - start - 4),
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
 }

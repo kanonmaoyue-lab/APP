@@ -1,31 +1,298 @@
-import {liveQuery} from 'dexie';
-import {v5} from 'uuid';
-import {Database} from './database';
-import {scheduleReview} from '../domain/reviews';
-import {validateEvent} from '../domain/dates';
-import {keys,type Table,type Of,type Entity,type Operation,type Batch,type Change} from '../domain/types';
-export interface Conflict{operation:Operation;entities:Entity[];reason:string;keys:string[]}
-export interface Repository{
- userId:string;list<T extends Table>(table:T,deleted?:boolean):Promise<Of<T>[]>;get<T extends Table>(table:T,id:string):Promise<Of<T>|undefined>;enqueue(operation:Operation):Promise<void>;pending():Promise<Operation[]>;accept(batch:Batch):Promise<void>;cursor():Promise<string>;conflicts():Promise<Conflict[]>;recordConflict(operation:Operation,entities:Entity[],reason:string):Promise<void>;resolve(id:string,choice:'remote'|'local'|'copy'):Promise<void>;clear():Promise<void>;close():void;subscribe(callback:()=>void):()=>void;lease(owner:string,now:number,ttl:number):Promise<boolean>;release(owner:string):Promise<void>;stamp(status?:string):Promise<{status:string;at:number}|undefined>;
+import { liveQuery } from 'dexie';
+import { v5 } from 'uuid';
+import { Database } from './database';
+import { scheduleReview } from '../domain/reviews';
+import { validateEvent } from '../domain/dates';
+import {
+  type Batch,
+  type Change,
+  type Entity,
+  keys,
+  type Of,
+  type Operation,
+  type Table,
+} from '../domain/types';
+export interface Conflict {
+  operation: Operation;
+  entities: Entity[];
+  reason: string;
+  keys: string[];
 }
-export function openRepository(userId:string):Repository{
- if(!userId)throw Error('需要账号身份');const db=new Database(userId);
- async function projection(){const map=new Map((await db.base.toArray()).map(e=>[e.table+':'+e.id,e]));for(const {operation}of await db.queue.orderBy('sequence').toArray()){const cmd=operation.command;if(cmd.kind==='review'){const key='reviewItems:'+cmd.itemId,item=map.get(key),id=v5(cmd.reviewDate,cmd.itemId);if(item?.table!=='reviewItems'||item.deletedAt||item.archivedAt||map.has('reviewLogs:'+id))continue;const next=scheduleReview(item.level,cmd.rating,cmd.reviewDate);map.set(key,{...item,...next});map.set('reviewLogs:'+id,{id,userId,table:'reviewLogs',version:0,updatedAt:cmd.reviewDate+'T00:00:00Z',deletedAt:null,itemId:item.id,reviewDate:cmd.reviewDate,rating:cmd.rating,previousLevel:item.level,nextLevel:next.level});for(const [k,e]of map)if(e.table==='events'&&e.reviewItemId===item.id&&e.plannedDate===cmd.reviewDate&&!e.deletedAt)map.set(k,{...e,completedAt:cmd.reviewDate+'T00:00:00Z'});}else for(const c of cmd.changes){const key=c.table+':'+c.id,current=map.get(key);if(c.value)map.set(key,{...c.value,version:current?.version??0});else if(current)map.set(key,{...current,deletedAt:'pending'});}}return [...map.values()];}
- const r:Repository={userId,
-  async list<T extends Table>(table:T,deleted=false){return (await projection()).filter(e=>e.table===table&&(deleted||!e.deletedAt))as Of<T>[];},
-  async get<T extends Table>(table:T,id:string){return (await projection()).find(e=>e.table===table&&e.id===id)as Of<T>|undefined;},
-  async pending(){return (await db.queue.orderBy('sequence').toArray()).map(row=>row.operation);},
-  async enqueue(operation){if(operation.userId!==userId)throw Error('账号不匹配');const cmd=operation.command;if(cmd.kind==='write'){if(!cmd.changes.length||cmd.changes.length>50)throw Error('操作数量应为1至50');if(new Set(cmd.changes.map(c=>c.table+':'+c.id)).size!==cmd.changes.length)throw Error('重复记录');for(const c of cmd.changes){if(c.value&&(c.id!==c.value.id||c.table!==c.value.table||c.value.userId!==userId))throw Error('记录身份不匹配');if(c.value?.table==='events')validateEvent(c.value);}}
-   await db.transaction('rw',db.base,db.queue,async()=>{if(await db.queue.where('id').equals(operation.id).count())return;if(cmd.kind==='review'){const logs=await r.list('reviewLogs'),item=await r.get('reviewItems',cmd.itemId);if(!item||item.deletedAt||item.archivedAt||logs.some(l=>l.itemId===cmd.itemId&&l.reviewDate>=cmd.reviewDate))throw Error('这项内容今天已经评分，或主题已归档');if(cmd.reviewDate<item.learnedOn)throw Error('评分日期早于学习日期');scheduleReview(item.level,cmd.rating,cmd.reviewDate);}await db.queue.add({id:operation.id,operation});});
-  },
-  async accept(batch){if(batch.entities.some(e=>e.userId!==userId))throw Error('收到其他账号数据');await db.transaction('rw',db.base,db.queue,db.meta,async()=>{const ack=await db.queue.where('id').equals(batch.operationId).first();for(const e of batch.entities){const prior=await db.base.get([e.table,e.id]);if(!prior||prior.version<e.version)await db.base.put(e);}if(ack){const cmd=ack.operation.command;const preceding=(table:Table,id:string)=>cmd.kind==='review'?(table==='reviewItems'&&id===cmd.itemId?cmd.baseVersion:undefined):cmd.changes.find(c=>c.table===table&&c.id===id)?.baseVersion;for(const row of await db.queue.where('sequence').above(ack.sequence!).toArray()){const next=row.operation.command;if(next.kind==='review'){const e=batch.entities.find(e=>e.table==='reviewItems'&&e.id===next.itemId);if(e&&next.baseVersion===preceding('reviewItems',next.itemId)&&!e.deletedAt)next.baseVersion=e.version;}else for(const c of next.changes){const e=batch.entities.find(e=>e.table===c.table&&e.id===c.id);if(e&&c.baseVersion===preceding(c.table,c.id)&&!e.deletedAt)c.baseVersion=e.version;}await db.queue.put(row);}await db.queue.where('id').equals(batch.operationId).delete();}const cursor=await r.cursor();if(BigInt(batch.cursor)===BigInt(cursor)+1n)await db.meta.put({key:'cursor',value:batch.cursor});});},
-  async cursor(){return String((await db.meta.get('cursor'))?.value??'0');},
-  async conflicts(){return ((await db.meta.get('conflicts'))?.value??[])as Conflict[];},
-  async recordConflict(operation,entities,reason){if(entities.some(e=>e.userId!==userId))throw Error('账号不匹配');await db.transaction('rw',db.base,db.meta,async()=>{const conflicts=await r.conflicts();if(!conflicts.some(c=>c.operation.id===operation.id))conflicts.push({operation,entities,reason,keys:keys(operation)});await db.meta.put({key:'conflicts',value:conflicts});for(const e of entities){const prior=await db.base.get([e.table,e.id]);if(!prior||prior.version<e.version)await db.base.put(e);}});},
-  async resolve(id,choice){await db.transaction('rw',db.base,db.queue,db.meta,async()=>{const conflicts=await r.conflicts(),conflict=conflicts.find(c=>c.operation.id===id);if(!conflict)return;if(choice==='local'&&conflict.reason==='scheduleChanged')throw Error('日程已变化，请重新生成动线建议');const blocked=new Set(conflict.keys),affected:Operation[]=[];for(const op of await r.pending())if(keys(op).some(k=>blocked.has(k))){affected.push(op);keys(op).forEach(k=>blocked.add(k));}const values=new Map<string,Change>();if(choice!=='remote')for(const op of affected){if(op.command.kind==='review')throw Error('复习评分冲突请采用云端记录');for(const c of op.command.changes){const local=await r.get(c.table,c.id),remote=await db.base.get([c.table,c.id]);if(choice==='local'){if(remote?.deletedAt)throw Error('云端已删除，请另存新记录');values.set(c.table+':'+c.id,{...c,baseVersion:remote?.version??0,value:local??null});}else{if(!local||!['events','reviewItems'].includes(local.table))throw Error('此类记录请先导出，再采用云端版本');values.set(c.table+':'+c.id,{...c,value:local});}}}if(choice==='copy')for(const [key,c]of values){const id=crypto.randomUUID(),v=c.value!;const value=v.table==='events'?{...v,id,version:0,deletedAt:null,recurrenceId:null,occurrenceDate:null,reviewItemId:null}:{...v,id,version:0,deletedAt:null};values.set(key,{table:c.table,id,baseVersion:0,value});}await db.queue.where('id').anyOf(affected.map(o=>o.id)).delete();if(values.size){const id=crypto.randomUUID();await db.queue.add({id,operation:{id,userId,command:{kind:'write',changes:[...values.values()]}}});}await db.meta.put({key:'conflicts',value:conflicts.filter(c=>!affected.some(o=>o.id===c.operation.id))});});},
-  async clear(){await db.transaction('rw',db.base,db.queue,db.meta,async()=>{await db.base.clear();await db.queue.clear();await db.meta.clear();});},close(){db.close();},subscribe(callback){const s=liveQuery(async()=>[await db.base.toArray(),await db.queue.toArray(),await db.meta.toArray()]).subscribe({next:callback});return()=>s.unsubscribe();},
-  async lease(owner,now,ttl){return db.transaction('rw',db.meta,async()=>{const current=(await db.meta.get('lease'))?.value as {owner:string;expires:number}|undefined;if(current&&current.owner!==owner&&current.expires>now)return false;await db.meta.put({key:'lease',value:{owner,expires:now+ttl}});return true;});},
-  async release(owner){await db.transaction('rw',db.meta,async()=>{const current=(await db.meta.get('lease'))?.value as {owner:string}|undefined;if(current?.owner===owner)await db.meta.delete('lease');});},
-  async stamp(status){if(status)await db.meta.put({key:'stamp',value:{status,at:Date.now()}});return (await db.meta.get('stamp'))?.value as {status:string;at:number}|undefined;},
- };return r;
+export interface Repository {
+  userId: string;
+  list<T extends Table>(table: T, deleted?: boolean): Promise<Of<T>[]>;
+  get<T extends Table>(table: T, id: string): Promise<Of<T> | undefined>;
+  enqueue(operation: Operation): Promise<void>;
+  pending(): Promise<Operation[]>;
+  accept(batch: Batch): Promise<void>;
+  cursor(): Promise<string>;
+  conflicts(): Promise<Conflict[]>;
+  recordConflict(operation: Operation, entities: Entity[], reason: string): Promise<void>;
+  resolve(id: string, choice: 'remote' | 'local' | 'copy'): Promise<void>;
+  clear(): Promise<void>;
+  close(): void;
+  subscribe(callback: () => void): () => void;
+  lease(owner: string, now: number, ttl: number): Promise<boolean>;
+  release(owner: string): Promise<void>;
+  stamp(status?: string): Promise<{ status: string; at: number } | undefined>;
+}
+export function openRepository(userId: string): Repository {
+  if (!userId) throw Error('需要账号身份');
+  const db = new Database(userId);
+  async function projection() {
+    const map = new Map((await db.base.toArray()).map((e) => [e.table + ':' + e.id, e]));
+    for (const { operation } of await db.queue.orderBy('sequence').toArray()) {
+      const cmd = operation.command;
+      if (cmd.kind === 'review') {
+        const key = 'reviewItems:' + cmd.itemId,
+          item = map.get(key),
+          id = v5(cmd.reviewDate, cmd.itemId);
+        if (
+          item?.table !== 'reviewItems' || item.deletedAt || item.archivedAt ||
+          map.has('reviewLogs:' + id)
+        ) continue;
+        const next = scheduleReview(item.level, cmd.rating, cmd.reviewDate);
+        map.set(key, { ...item, ...next });
+        map.set('reviewLogs:' + id, {
+          id,
+          userId,
+          table: 'reviewLogs',
+          version: 0,
+          updatedAt: cmd.reviewDate + 'T00:00:00Z',
+          deletedAt: null,
+          itemId: item.id,
+          reviewDate: cmd.reviewDate,
+          rating: cmd.rating,
+          previousLevel: item.level,
+          nextLevel: next.level,
+        });
+        for (const [k, e] of map) {
+          if (
+            e.table === 'events' && e.reviewItemId === item.id &&
+            e.plannedDate === cmd.reviewDate && !e.deletedAt
+          ) map.set(k, { ...e, completedAt: cmd.reviewDate + 'T00:00:00Z' });
+        }
+      } else {for (const c of cmd.changes) {
+          const key = c.table + ':' + c.id, current = map.get(key);
+          if (c.value) map.set(key, { ...c.value, version: current?.version ?? 0 });
+          else if (current) map.set(key, { ...current, deletedAt: 'pending' });
+        }}
+    }
+    return [...map.values()];
+  }
+  const r: Repository = {
+    userId,
+    async list<T extends Table>(table: T, deleted = false) {
+      return (await projection()).filter((e) =>
+        e.table === table && (deleted || !e.deletedAt)
+      ) as Of<T>[];
+    },
+    async get<T extends Table>(table: T, id: string) {
+      return (await projection()).find((e) => e.table === table && e.id === id) as
+        | Of<T>
+        | undefined;
+    },
+    async pending() {
+      return (await db.queue.orderBy('sequence').toArray()).map((row) => row.operation);
+    },
+    async enqueue(operation) {
+      if (operation.userId !== userId) throw Error('账号不匹配');
+      const cmd = operation.command;
+      if (cmd.kind === 'write') {
+        if (!cmd.changes.length || cmd.changes.length > 50) throw Error('操作数量应为1至50');
+        if (
+          new Set(cmd.changes.map((c) => c.table + ':' + c.id)).size !== cmd.changes.length
+        ) throw Error('重复记录');
+        for (const c of cmd.changes) {
+          if (
+            c.value &&
+            (c.id !== c.value.id || c.table !== c.value.table || c.value.userId !== userId)
+          ) throw Error('记录身份不匹配');
+          if (c.value?.table === 'events') validateEvent(c.value);
+        }
+      }
+      await db.transaction('rw', db.base, db.queue, async () => {
+        if (await db.queue.where('id').equals(operation.id).count()) return;
+        if (cmd.kind === 'review') {
+          const logs = await r.list('reviewLogs'), item = await r.get('reviewItems', cmd.itemId);
+          if (
+            !item || item.deletedAt || item.archivedAt ||
+            logs.some((l) => l.itemId === cmd.itemId && l.reviewDate >= cmd.reviewDate)
+          ) throw Error('这项内容今天已经评分，或主题已归档');
+          if (cmd.reviewDate < item.learnedOn) throw Error('评分日期早于学习日期');
+          scheduleReview(item.level, cmd.rating, cmd.reviewDate);
+        }
+        await db.queue.add({ id: operation.id, operation });
+      });
+    },
+    async accept(batch) {
+      if (batch.entities.some((e) => e.userId !== userId)) throw Error('收到其他账号数据');
+      await db.transaction('rw', db.base, db.queue, db.meta, async () => {
+        const ack = await db.queue.where('id').equals(batch.operationId).first();
+        for (const e of batch.entities) {
+          const prior = await db.base.get([e.table, e.id]);
+          if (!prior || prior.version < e.version) await db.base.put(e);
+        }
+        if (ack) {
+          const cmd = ack.operation.command;
+          const preceding = (table: Table, id: string) =>
+            cmd.kind === 'review'
+              ? (table === 'reviewItems' && id === cmd.itemId ? cmd.baseVersion : undefined)
+              : cmd.changes.find((c) => c.table === table && c.id === id)?.baseVersion;
+          for (const row of await db.queue.where('sequence').above(ack.sequence!).toArray()) {
+            const next = row.operation.command;
+            if (next.kind === 'review') {
+              const e = batch.entities.find((e) =>
+                e.table === 'reviewItems' && e.id === next.itemId
+              );
+              if (
+                e && next.baseVersion === preceding('reviewItems', next.itemId) && !e.deletedAt
+              ) next.baseVersion = e.version;
+            } else {for (const c of next.changes) {
+                const e = batch.entities.find((e) => e.table === c.table && e.id === c.id);
+                if (e && c.baseVersion === preceding(c.table, c.id) && !e.deletedAt) {
+                  c
+                    .baseVersion = e.version;
+                }
+              }}
+            await db.queue.put(row);
+          }
+          await db.queue.where('id').equals(batch.operationId).delete();
+        }
+        const cursor = await r.cursor();
+        if (BigInt(batch.cursor) === BigInt(cursor) + 1n) {
+          await db.meta.put({ key: 'cursor', value: batch.cursor });
+        }
+      });
+    },
+    async cursor() {
+      return String((await db.meta.get('cursor'))?.value ?? '0');
+    },
+    async conflicts() {
+      return ((await db.meta.get('conflicts'))?.value ?? []) as Conflict[];
+    },
+    async recordConflict(operation, entities, reason) {
+      if (entities.some((e) => e.userId !== userId)) throw Error('账号不匹配');
+      await db.transaction('rw', db.base, db.meta, async () => {
+        const conflicts = await r.conflicts();
+        if (!conflicts.some((c) => c.operation.id === operation.id)) {
+          conflicts.push({ operation, entities, reason, keys: keys(operation) });
+        }
+        await db.meta.put({ key: 'conflicts', value: conflicts });
+        for (const e of entities) {
+          const prior = await db.base.get([e.table, e.id]);
+          if (!prior || prior.version < e.version) {
+            await db.base.put(e);
+          }
+        }
+      });
+    },
+    async resolve(id, choice) {
+      await db.transaction('rw', db.base, db.queue, db.meta, async () => {
+        const conflicts = await r.conflicts(),
+          conflict = conflicts.find((c) => c.operation.id === id);
+        if (!conflict) return;
+        if (choice === 'local' && conflict.reason === 'scheduleChanged') {
+          throw Error('日程已变化，请重新生成动线建议');
+        }
+        const blocked = new Set(conflict.keys), affected: Operation[] = [];
+        for (const op of await r.pending()) {
+          if (keys(op).some((k) => blocked.has(k))) {
+            affected.push(op);
+            keys(op).forEach((k) => blocked.add(k));
+          }
+        }
+        const values = new Map<string, Change>();
+        if (choice !== 'remote') {
+          for (const op of affected) {
+            if (op.command.kind === 'review') throw Error('复习评分冲突请采用云端记录');
+            for (const c of op.command.changes) {
+              const local = await r.get(c.table, c.id), remote = await db.base.get([c.table, c.id]);
+              if (choice === 'local') {
+                if (remote?.deletedAt) throw Error('云端已删除，请另存新记录');
+                values.set(c.table + ':' + c.id, {
+                  ...c,
+                  baseVersion: remote?.version ?? 0,
+                  value: local ?? null,
+                });
+              } else {
+                if (!local || !['events', 'reviewItems'].includes(local.table)) {
+                  throw Error(
+                    '此类记录请先导出，再采用云端版本',
+                  );
+                }
+                values.set(c.table + ':' + c.id, { ...c, value: local });
+              }
+            }
+          }
+        }
+        if (choice === 'copy') {
+          for (const [key, c] of values) {
+            const id = crypto.randomUUID(), v = c.value!;
+            const value = v.table === 'events'
+              ? {
+                ...v,
+                id,
+                version: 0,
+                deletedAt: null,
+                recurrenceId: null,
+                occurrenceDate: null,
+                reviewItemId: null,
+              }
+              : { ...v, id, version: 0, deletedAt: null };
+            values.set(key, { table: c.table, id, baseVersion: 0, value });
+          }
+        }
+        await db.queue.where('id').anyOf(affected.map((o) => o.id)).delete();
+        if (values.size) {
+          const id = crypto.randomUUID();
+          await db.queue.add({
+            id,
+            operation: { id, userId, command: { kind: 'write', changes: [...values.values()] } },
+          });
+        }
+        await db.meta.put({
+          key: 'conflicts',
+          value: conflicts.filter((c) => !affected.some((o) => o.id === c.operation.id)),
+        });
+      });
+    },
+    async clear() {
+      await db.transaction('rw', db.base, db.queue, db.meta, async () => {
+        await db.base.clear();
+        await db.queue.clear();
+        await db.meta.clear();
+      });
+    },
+    close() {
+      db.close();
+    },
+    subscribe(callback) {
+      const s = liveQuery(
+        async () => [await db.base.toArray(), await db.queue.toArray(), await db.meta.toArray()],
+      ).subscribe({ next: callback });
+      return () => s.unsubscribe();
+    },
+    async lease(owner, now, ttl) {
+      return db.transaction('rw', db.meta, async () => {
+        const current = (await db.meta.get('lease'))?.value as
+          | { owner: string; expires: number }
+          | undefined;
+        if (current && current.owner !== owner && current.expires > now) return false;
+        await db.meta.put({ key: 'lease', value: { owner, expires: now + ttl } });
+        return true;
+      });
+    },
+    async release(owner) {
+      await db.transaction('rw', db.meta, async () => {
+        const current = (await db.meta.get('lease'))?.value as { owner: string } | undefined;
+        if (current?.owner === owner) await db.meta.delete('lease');
+      });
+    },
+    async stamp(status) {
+      if (status) await db.meta.put({ key: 'stamp', value: { status, at: Date.now() } });
+      return (await db.meta.get('stamp'))?.value as { status: string; at: number } | undefined;
+    },
+  };
+  return r;
 }
