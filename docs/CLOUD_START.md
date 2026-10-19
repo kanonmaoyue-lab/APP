@@ -4,7 +4,15 @@
 
 1. 依赖或本地后端缺失时运行 `bash scripts/cloud-install.sh`。脚本已经在本次环境完整运行成功。使用 `/workspace/.cache`，不要写入只读 home，不关闭 TLS 校验。
 2. 已安装时运行 `npm run backend:start`，再运行 `node scripts/local.mjs`。配置文件不同会明确拒绝覆盖；先检查原因。不要输出 `.env`、原始 `supabase status -o json`、session 或密钥。
-3. 运行 `npm run test:integration` 检查真实 API／Auth／RPC 功能，而不只看进程存在。临时测试账号会清理；这不代表正式服务配置已经完成。
+3. 运行 `npm run test:integration` 检查真实 API／Auth／RPC 功能，而不只看进程存在。临时测试账号会清理；这不代表正式服务配置已经完成。本地地图代理还需单独启动（保留现有配置，复制命令不会覆盖已存在文件）：
+
+   ```sh
+   cp -n scripts/local-edge-proxy/local.env.example .env.edge.local
+   node scripts/backend.mjs functions serve route-service --env-file .env.edge.local
+   ```
+
+   在另一会话运行 `node scripts/check-local-route.mjs`，验证匿名401、已登录无效请求400、非法来源403。它不调用真实 ORS，也不消耗地图配额。云环境的 Docker 注入重复代理变量，`.env` 中直接设置 NO_PROXY 会被后面的值覆盖；`cloud-tools.mjs` 已构建固定官方摘要的本地 Edge 兼容镜像，在执行原始二进制前仅对精确 `http://kong:8000` 添加内部主机 kong 例外，保留外部代理和 TLS。已有旧容器需用上述 functions serve 重新创建；只做 docker start 不会切换镜像。
+
 4. 启动 `npm run dev -- --mode test --port 5173`。普通首页是实际账号界面；`tests/harness.html` 是明确标记的测试夹具，不能当成正式应用。云环境不支持可分享的 loopback 预览，不向用户提供这种地址。
 5. 变更后运行对应测试。完整命令见 README；Chromium 使用系统浏览器，WebKit 仍须另外安装／验证。真实 iPad 与莫干山校区路线不能用浏览器模拟器替代。
 

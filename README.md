@@ -46,6 +46,8 @@ npm run dev -- --mode test
 
 `local.mjs` 只接受 loopback 后端，公开 URL／发布密钥写入本地测试文件，service-role 仅留在测试进程内，不打印。已有配置不同时拒绝覆盖。开发正式云绑定时复制 `.env.example` 为 `.env.local`；前端的 URL 和 publishable key 是公开配置。服务端 key 不进入浏览器或版本库。
 
+本地地图代理需另外运行 `node scripts/backend.mjs functions serve route-service --env-file .env.edge.local`；先用 `cp -n scripts/local-edge-proxy/local.env.example .env.edge.local` 准备非秘密的允许来源。`node scripts/check-local-route.mjs` 用真实 Auth 检查匿名401、登录后无效请求400和非法来源403，不调用道路服务。详细代理兼容说明见 CLOUD_START。没有 ORS key 时仍不能获得真实路线。
+
 邮箱验证和恢复测试使用本地 Mailpit 捕获邮件，不能据此认为生产邮箱已经可投递。服务进程不保证跨任务存活，后续启动必须检查真实 API 功能与健康状态。
 
 ## 验证
@@ -86,6 +88,6 @@ WebKit 安装成功后，把上述 Playwright 命令改为 `--project=webkit`。
 - 用户明确选择重建已确认方案，因此复述实施计划后直接继续，不重复请求设计批准；成本是内部实现可能与遗失代码不同，功能验收仍保持原要求。
 - 使用现有隔离检出，不新建 worktree；成本是没有额外分支隔离。
 - 部分技能辅助资源无法读取，采用主技能要求与本地红／绿灯台账；成本是辅助文档中的额外建议不可用。
-- npm／Supabase 缓存放在 `/workspace/.cache`，避免只读 home。VFS 正常分层镜像可能耗尽空间，因此校验官方 crane v0.20.3 与官方 PG17 摘要后制作单层派生镜像，逐项核对上游运行配置，不关闭 TLS／校验。Auth 固定摘要派生镜像只为精确 loopback 健康 URL 的 BusyBox wget 添加 `-Y off`；实际运行用户的执行权限已核对。成本是上游镜像更新时须维护兼容辅助器。
+- npm／Supabase 缓存放在 `/workspace/.cache`，避免只读 home。VFS 正常分层镜像可能耗尽空间，因此校验官方 crane v0.20.3 与官方 PG17 摘要后制作单层派生镜像，逐项核对上游运行配置，不关闭 TLS／校验。Auth 固定摘要派生镜像只为精确 loopback 健康 URL 的 BusyBox wget 添加 `-Y off`；实际运行用户的执行权限已核对。成本是上游镜像更新时须维护兼容辅助器。Edge v1.77.4 的本地派生镜像另用启动包装器处理 Docker 重复注入的 NO_PROXY，仅为内部 kong 设置例外，外部代理保持原样；该包装器不进入正式函数源码。
 
 ORS 契约来源：官方仓库 `GIScience/openrouteservice` 的 `docs/api-reference/endpoints/matrix/index.md`、`geocoder/index.md` 与 `directions/requests-and-return-types.md`，2026-10-17 重新读取。坐标顺序 `[lon,lat]`，矩阵耗时单位秒，不可达为 null。没有第三方密钥时契约测试不等同真实服务可用。

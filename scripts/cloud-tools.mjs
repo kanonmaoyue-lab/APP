@@ -108,3 +108,11 @@ execFileSync('docker', [
   'ghcr.io/supabase/gotrue:v2.197.0',
   'scripts/local-auth-probe',
 ], { stdio: 'inherit', env: { ...process.env, DOCKER_BUILDKIT: '0' } });
+
+// Preserve external proxies; only the local Docker API hostname bypasses them.
+execFileSync('docker', [
+  'build',
+  '-t',
+  'ghcr.io/supabase/edge-runtime:v1.77.4',
+  'scripts/local-edge-proxy',
+], { stdio: 'inherit', env: { ...process.env, DOCKER_BUILDKIT: '0' } });

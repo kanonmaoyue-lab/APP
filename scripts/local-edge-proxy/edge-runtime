@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+# The cloud runtime appends duplicate proxy environment values after --env-file.
+# Apply the exception immediately before exec, only for the local Docker API.
+case "${SUPABASE_URL:-}" in
+  http://kong:8000|http://kong:8000/)
+    NO_PROXY="${NO_PROXY:+$NO_PROXY,}kong"
+    no_proxy="${no_proxy:+$no_proxy,}kong"
+    export NO_PROXY no_proxy
+    ;;
+esac
+exec /usr/local/bin/edge-runtime "$@"
